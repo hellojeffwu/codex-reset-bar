@@ -1,0 +1,6 @@
+{
+  "accountId": "fixture-account",
+  "ordinaryUsageAllowed": false,
+  "rateLimits": { "limitId": "codex", "planType": "pro", "primary": { "usedPercent": 100, "windowDurationMins": 300 } },
+  "rateLimitsByLimitId": {}
+}

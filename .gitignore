@@ -1,0 +1,12 @@
+build/
+dist/
+**/bin/
+**/obj/
+**/__pycache__/
+*.user
+*.pfx
+*.p12
+*.keychain*
+*.pem
+*.key
+.DS_Store

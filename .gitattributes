@@ -1,0 +1,2 @@
+*.sh text eol=lf
+windows/notices/* -text whitespace=cr-at-eol

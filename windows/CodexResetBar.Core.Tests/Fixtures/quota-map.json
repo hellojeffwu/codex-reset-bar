@@ -1,0 +1,12 @@
+{
+  "accountId": "fixture-account",
+  "ordinaryUsageAllowed": true,
+  "rateLimits": { "planType": "plus", "primary": { "usedPercent": 99, "windowDurationMins": 300 } },
+  "rateLimitsByLimitId": {
+    "codex": {
+      "limitName": "Codex", "planType": "plus",
+      "primary": { "usedPercent": 72.5, "windowDurationMins": 300, "resetsAt": 1900000000 },
+      "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 1900500000 }
+    }
+  }
+}

@@ -1,0 +1,109 @@
+name: Build desktop downloads
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS universal DMG
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run Swift test suites
+        run: bash scripts/test-swift.sh
+      - name: Build and verify DMG
+        env:
+          CODEX_SIGNING_MODE: adhoc
+        run: bash scripts/package-macos.sh
+      - name: Upload macOS download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codex-reset-bar-macOS-universal
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64 EXE
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Run core test console
+        run: dotnet run --project windows/CodexResetBar.Core.Tests/CodexResetBar.Core.Tests.csproj --configuration Release
+      - name: Publish self-contained single EXE
+        run: >-
+          dotnet publish windows/CodexResetBar/CodexResetBar.csproj
+          --configuration Release --runtime win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None -p:DebugSymbols=false --output build/windows
+      - name: Smoke test published WinForms and dummy DPAPI storage
+        shell: pwsh
+        env:
+          CODEX_SELF_TEST_ARTIFACT_DIR: ${{ github.workspace }}/build/windows-ui
+        run: |
+          $program = (Resolve-Path 'build/windows/CodexResetBar.exe').Path
+          $process = Start-Process -FilePath $program -ArgumentList '--self-test' -PassThru -RedirectStandardOutput 'build/windows/self-test.log' -RedirectStandardError 'build/windows/self-test-error.log'
+          if (-not $process.WaitForExit(90000)) {
+            $process.Kill($true)
+            throw 'Published EXE self-test timed out.'
+          }
+          Get-Content 'build/windows/self-test.log' -ErrorAction SilentlyContinue
+          Get-Content 'build/windows/self-test-error.log' -ErrorAction SilentlyContinue
+          if ($process.ExitCode -ne 0) { throw "Published EXE self-test failed: $($process.ExitCode)" }
+      - name: Upload Windows UI verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codex-reset-bar-windows-ui
+          path: |
+            build/windows-ui/*.png
+            build/windows/self-test*.log
+          if-no-files-found: warn
+      - name: Prepare Windows download and SHA256
+        shell: pwsh
+        run: |
+          $project = [xml](Get-Content 'windows/CodexResetBar/CodexResetBar.csproj')
+          $version = $project.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Missing semantic version in Windows project.' }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $fileName = "CodexResetBar-$version-windows-x64.exe"
+          Copy-Item 'build/windows/CodexResetBar.exe' "dist/$fileName"
+          $hash = (Get-FileHash "dist/$fileName" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText((Join-Path $PWD "dist/$fileName.sha256"), "$hash  $fileName`n")
+          $payload = 'build/windows-download'
+          New-Item -ItemType Directory -Path "$payload/assets", "$payload/notices" -Force | Out-Null
+          Copy-Item "dist/$fileName" "$payload/$fileName"
+          Copy-Item LICENSE, README.md, COMMERCIAL.md $payload
+          Copy-Item windows/README.md "$payload/Windows使用说明.md"
+          Copy-Item assets/wechat-qr.png "$payload/assets/wechat-qr.png"
+          Copy-Item windows/notices/* "$payload/notices/"
+          $zipName = "CodexResetBar-$version-windows-x64.zip"
+          Compress-Archive -Path "$payload/*" -DestinationPath "dist/$zipName" -CompressionLevel Optimal
+          $zipHash = (Get-FileHash "dist/$zipName" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText((Join-Path $PWD "dist/$zipName.sha256"), "$zipHash  $zipName`n")
+      - name: Upload Windows download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codex-reset-bar-windows-x64
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error

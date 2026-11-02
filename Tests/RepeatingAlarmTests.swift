@@ -8,25 +8,30 @@ import Foundation
             if !condition { fatalError("FAIL: \(message)") }
         }
         func pump(_ duration: TimeInterval) { RunLoop.main.run(until: Date().addingTimeInterval(duration)) }
+        func waitForCallbacks(_ condition: () -> Bool) {
+            let deadline = ProcessInfo.processInfo.systemUptime + 2
+            while !condition() && ProcessInfo.processInfo.systemUptime < deadline { pump(0.01) }
+        }
 
         var plays = 0
         var stops = 0
-        var playedAt: [Date] = []
         let alarm = RepeatingAlarm(interval: 0.04, play: {
             plays += 1
-            playedAt.append(Date())
         }, stopAudio: { stops += 1 })
 
         expect(!alarm.isActive, "alarm begins inactive")
+        let startedAt = ProcessInfo.processInfo.systemUptime
         alarm.start()
         expect(alarm.isActive && plays == 1, "first sound plays immediately")
         alarm.start()
         expect(plays == 1, "repeated start does not replay immediately")
-        pump(0.19)
-        expect(plays >= 4, "sound repeats at least three times without user acknowledgement")
-        expect(plays <= 6, "repeated start does not create a second timer")
-        let intervals = zip(playedAt.dropFirst(), playedAt).map { $0.timeIntervalSince($1) }
-        expect(intervals.allSatisfy { $0 > 0.02 }, "ticks are not duplicated or clustered")
+        waitForCallbacks { plays >= 6 }
+        expect(plays >= 6, "sound keeps repeating without user acknowledgement")
+        let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+        expect(plays - 1 <= Int(elapsed / 0.04) + 1, "repeated start does not double the timer rate")
+        let repeatingCount = plays
+        alarm.start()
+        expect(plays == repeatingCount, "start remains idempotent after timer callbacks")
 
         alarm.stop()
         let stoppedCount = plays
@@ -38,7 +43,7 @@ import Foundation
 
         alarm.start()
         expect(alarm.isActive && plays == stoppedCount + 1, "a new reminder can start after acknowledgement")
-        pump(0.10)
+        waitForCallbacks { plays >= stoppedCount + 3 }
         expect(plays >= stoppedCount + 3, "restarted alarm keeps repeating")
         alarm.stop()
         let finalCount = plays

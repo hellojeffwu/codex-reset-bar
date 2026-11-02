@@ -11,7 +11,7 @@ dotnet publish windows/CodexResetBar/CodexResetBar.csproj -c Release -r win-x64 
 ./scripts/package-windows.ps1
 ```
 
-需要 Inno Setup 6.5 或更新版本。脚本优先查找已安装的 `ISCC.exe`；可通过 `-InnoSetupCompiler 'C:\path\ISCC.exe'` 指定。缺少依赖时，可显式传入 `-InstallInnoSetup`：该选项下载 Inno Setup 官方 GitHub 的固定 6.5.4 安装 EXE，与 Microsoft winget 的 `JRSoftware.InnoSetup` 6.5.4 清单交叉核对的固定 SHA256 完全一致后，才以当前用户静默安装依赖。无需 winget，不下载执行 PowerShell 或 shell 脚本；安装依赖需要联网。应用安装包本身无下载步骤。
+需要 Inno Setup 6.5 或更新版本。脚本优先查找已安装的 `ISCC.exe`；可通过 `-InnoSetupCompiler 'C:\path\ISCC.exe'` 指定。发布 CI 使用 `-InstallInnoSetup` 确保固定的 6.5.4：优先复用该版本，否则下载 Inno Setup 官方 GitHub 的固定 6.5.4 安装 EXE，与 Microsoft winget 的 `JRSoftware.InnoSetup` 6.5.4 清单交叉核对的固定 SHA256 完全一致后，才以当前用户 portable 模式安装至 `build/tools/innosetup-6.5.4`。无需 winget，不下载执行 PowerShell 或 shell 脚本，不写入全局文件关联或卸载注册；安装依赖需要联网。应用安装包本身无下载步骤。编译器版本通过不输出 EXE 的最小编译读取实际引擎版本，不依赖 PE 的产品版本字段。6.5.4 的[原始许可](https://github.com/jrsoftware/issrc/blob/is-6_5_4/license.txt)允许商业用途，需保留上游版权、网址及许可条件。
 
 简体中文语言文件随源码固定保存，来自 [Inno Setup 官方源码提交 6ef3219](https://github.com/jrsoftware/issrc/blob/6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2/Files/Languages/ChineseSimplified.isl)，未修改翻译及署名；上游许可见 `LICENSE.InnoSetup.txt`，安装目录也提供其副本。语言文件仅含语言选项、消息和自定义消息，不含安装代码。它兼容 Inno Setup 6.5+，无需构建时下载额外语言包。
 

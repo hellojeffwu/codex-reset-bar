@@ -44,6 +44,12 @@ Output=no
     }
     $engineVersion = [version]$match.Groups[1].Value
     Write-Host "Inno compiler candidate: $Path; engine=$engineVersion; probe exit=$probeExitCode"
+    # Release CI passes this switch to ensure the audited, reproducible version,
+    # rather than silently using a runner image's newer compiler/license terms.
+    if ($InstallInnoSetup -and $engineVersion -ne [version]'6.5.4') {
+        Write-Host 'This build requires pinned Inno Setup 6.5.4; skipping this candidate.'
+        return $false
+    }
     return ($probeExitCode -eq 0 -and $engineVersion -ge [version]'6.5.0')
 }
 function Find-InnoCompiler {

@@ -22,6 +22,7 @@ New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 $appId = '{A3E6E9B8-C853-46DC-BD21-D05C8AC87C6F}_is1'
 $uninstallKeys = @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId", "HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$appId")
 $checks = [Collections.Generic.List[object]]::new()
+$shortcutTargets = [Collections.Generic.List[object]]::new()
 $testId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "CodexResetBar-installer-$testId"
 $installDirectory = Join-Path $testRoot 'Application with spaces'
@@ -65,6 +66,15 @@ function Assert-DataPreserved {
 function Assert-NoMonitor {
     $running = @(Get-CimInstance Win32_Process -Filter "Name = 'CodexResetBar.exe'" | Where-Object { $_.ExecutablePath -eq (Join-Path $installDirectory 'CodexResetBar.exe') })
     Assert-Check ($running.Count -eq 0) 'Silent setup did not start the installed monitor'
+}
+function Assert-ShortcutTarget([string]$ShortcutPath, [string]$ExpectedPath, [string]$Name) {
+    $actualPath = $shell.CreateShortcut($ShortcutPath).TargetPath
+    Write-Host "$Name shortcut target: $actualPath"
+    Write-Host "$Name expected EXE: $ExpectedPath"
+    $shortcutTargets.Add([ordered]@{ shortcut = $Name; actualTarget = $actualPath; expectedTarget = $ExpectedPath })
+    Assert-Check ([IO.Path]::IsPathRooted($actualPath) -and (Test-Path -LiteralPath $actualPath -PathType Leaf)) "$Name shortcut target exists"
+    # Compare open-file identities: textual paths may differ due to 8.3 aliases.
+    Assert-Check ([InstallerFileIdentity]::Read($actualPath) -eq [InstallerFileIdentity]::Read($ExpectedPath)) "$Name shortcut targets the installed EXE file"
 }
 function Capture-WelcomePage {
     Add-Type -AssemblyName System.Drawing
@@ -120,6 +130,26 @@ try {
     Assert-Check ($null -eq (Get-TestUninstallEntry)) 'No pre-existing installation for this AppId'
     Assert-Check (-not (Test-Path -LiteralPath $desktopLink)) 'No pre-existing application desktop shortcut'
     if ($CaptureWizard) { Capture-WelcomePage }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class InstallerFileIdentity {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, [Out] byte[] info, uint size);
+    public static string Read(string path) {
+        using (var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+            // FILE_ID_INFO: 8-byte volume serial number plus 16-byte file ID.
+            var info = new byte[24];
+            if (!GetFileInformationByHandleEx(file.SafeFileHandle, 18, info, 24))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            return BitConverter.ToString(info);
+        }
+    }
+}
+'@
     New-Item -ItemType Directory -Path $testRoot, $dataProbe -Force | Out-Null
     $dataProbeCreated = $true
     Add-Type -AssemblyName System.Security
@@ -150,14 +180,14 @@ try {
     $shell = New-Object -ComObject WScript.Shell
     $startLink = Join-Path $startMenuDirectory 'Codex 额度提醒.lnk'
     Assert-Check (Test-Path -LiteralPath $startLink) 'Created start menu shortcut'
-    Assert-Check ($shell.CreateShortcut($startLink).TargetPath -eq $installedExe) 'Start menu shortcut targets installed EXE'
+    Assert-ShortcutTarget $startLink $installedExe 'Start menu'
     Assert-DataPreserved
 
     # Reinstall the same version as an upgrade check and explicitly opt into Desktop.
     Invoke-CheckedProcess $setup ($baseArguments + @('/TASKS="desktopicon"', "/LOG=`"$(Join-Path $artifacts 'upgrade.log')`"")) 'Silent upgrade'
     Assert-NoMonitor
     Assert-Check (Test-Path -LiteralPath $desktopLink) 'Optional desktop shortcut can be enabled'
-    Assert-Check ($shell.CreateShortcut($desktopLink).TargetPath -eq $installedExe) 'Desktop shortcut targets installed EXE'
+    Assert-ShortcutTarget $desktopLink $installedExe 'Desktop'
     Assert-DataPreserved
 
     # This isolated app entry point uses dummy DPAPI state and stub notifications.
@@ -202,6 +232,7 @@ finally {
         installerSha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         installDirectory = $installDirectory
         checks = @($checks.ToArray())
+        shortcutTargets = @($shortcutTargets.ToArray())
         limitation = 'Silent installation and offline self-test; no human click-through, real account, audio, or push acceptance is claimed.'
     }
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $artifacts 'report.json') -Encoding UTF8

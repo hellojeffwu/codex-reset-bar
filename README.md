@@ -87,7 +87,7 @@ bash scripts/verify-macos-package.sh
 
 ```sh
 dotnet run --project windows/CodexResetBar.Core.Tests --configuration Release
-dotnet publish windows/CodexResetBar -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+dotnet publish windows/CodexResetBar -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o build/windows
 ```
 
 Windows PowerShell 中运行 `./scripts/package-windows.ps1 -InstallInnoSetup` 构建安装向导（输入为 `build/windows/CodexResetBar.exe`）。CI 验证安装、升级、离线应用自检、卸载、快捷方式及虚构用户数据保留，并保存欢迎页截图。安装器使用 [Inno Setup](https://jrsoftware.org/)，其第三方许可随包附带。

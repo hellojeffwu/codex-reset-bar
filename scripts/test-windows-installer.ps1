@@ -68,13 +68,42 @@ function Assert-NoMonitor {
     Assert-Check ($running.Count -eq 0) 'Silent setup did not start the installed monitor'
 }
 function Assert-ShortcutTarget([string]$ShortcutPath, [string]$ExpectedPath, [string]$Name) {
-    $actualPath = $shell.CreateShortcut($ShortcutPath).TargetPath
-    Write-Host "$Name shortcut target: $actualPath"
-    Write-Host "$Name expected EXE: $ExpectedPath"
-    $shortcutTargets.Add([ordered]@{ shortcut = $Name; actualTarget = $actualPath; expectedTarget = $ExpectedPath })
+    # Preserve the original before any reader runs and before failure cleanup uninstalls it.
+    $artifactName = $Name.ToLowerInvariant().Replace(' ', '-') + '-shortcut.lnk'
+    Copy-Item -LiteralPath $ShortcutPath -Destination (Join-Path $artifacts $artifactName) -Force
+    $details = [ordered]@{
+        shortcut = $Name; shortcutFile = $ShortcutPath; expectedTarget = $ExpectedPath
+        artifactFile = $artifactName; byteLength = (Get-Item -LiteralPath $ShortcutPath).Length
+        sha256 = (Get-FileHash -LiteralPath $ShortcutPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        wscriptFullName = $null; wscriptTarget = $null; wscriptArguments = $null; wscriptWorkingDirectory = $null; wscriptError = $null
+        nativeLoadedFile = $null; nativeRawPath = $null; nativeRawPathHResult = $null
+        nativeNormalPath = $null; nativeNormalPathHResult = $null; nativeArguments = $null; nativeWorkingDirectory = $null
+    }
+    $shortcutTargets.Add($details)
+    try {
+        $wscriptLink = $shell.CreateShortcut($ShortcutPath)
+        $details.wscriptFullName = $wscriptLink.FullName
+        $details.wscriptTarget = $wscriptLink.TargetPath
+        $details.wscriptArguments = $wscriptLink.Arguments
+        $details.wscriptWorkingDirectory = $wscriptLink.WorkingDirectory
+    }
+    catch { $details.wscriptError = $_.Exception.GetType().FullName }
+    # Explicit IPersistFile.Load + IShellLinkW.GetPath(SLGP_RAWPATH); never Resolve or execute.
+    $native = [InstallerShortcutReader]::Read($ShortcutPath)
+    $details.nativeLoadedFile = $native.LoadedFile
+    $details.nativeRawPath = $native.RawPath
+    $details.nativeRawPathHResult = $native.RawPathHResult
+    $details.nativeNormalPath = $native.NormalPath
+    $details.nativeNormalPathHResult = $native.NormalPathHResult
+    $details.nativeArguments = $native.Arguments
+    $details.nativeWorkingDirectory = $native.WorkingDirectory
+    Write-Host ($details | ConvertTo-Json -Compress)
+    $actualPath = $native.RawPath
+    Assert-Check ($native.RawPathHResult -eq 0) "$Name native shortcut reader returned a target"
     Assert-Check ([IO.Path]::IsPathRooted($actualPath) -and (Test-Path -LiteralPath $actualPath -PathType Leaf)) "$Name shortcut target exists"
-    # Compare open-file identities: textual paths may differ due to 8.3 aliases.
+    # The native target must identify the actual installed file, not a copy.
     Assert-Check ([InstallerFileIdentity]::Read($actualPath) -eq [InstallerFileIdentity]::Read($ExpectedPath)) "$Name shortcut targets the installed EXE file"
+    Assert-Check ([string]::IsNullOrEmpty($native.Arguments)) "$Name shortcut has no unexpected arguments"
 }
 function Capture-WelcomePage {
     Add-Type -AssemblyName System.Drawing
@@ -135,6 +164,8 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 public static class InstallerFileIdentity {
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -147,6 +178,44 @@ public static class InstallerFileIdentity {
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             return BitConverter.ToString(info);
         }
+    }
+}
+public sealed class InstallerShortcutInfo {
+    public string LoadedFile, RawPath, NormalPath, Arguments, WorkingDirectory;
+    public int RawPathHResult, NormalPathHResult;
+}
+public static class InstallerShortcutReader {
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellLinkW {
+        [PreserveSig] int GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, IntPtr findData, uint flags);
+        void GetIDList(out IntPtr pidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder description, int size);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder directory, int size);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string directory);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments, int size);
+    }
+    public static InstallerShortcutInfo Read(string path) {
+        object instance = Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046")));
+        try {
+            var persistence = (IPersistFile)instance;
+            persistence.Load(path, 0);
+            string loadedFile;
+            persistence.GetCurFile(out loadedFile);
+            var link = (IShellLinkW)instance;
+            var raw = new StringBuilder(32768);
+            int rawResult = link.GetPath(raw, raw.Capacity, IntPtr.Zero, 4);
+            var normal = new StringBuilder(32768);
+            int normalResult = link.GetPath(normal, normal.Capacity, IntPtr.Zero, 0);
+            var arguments = new StringBuilder(32768);
+            var directory = new StringBuilder(32768);
+            link.GetArguments(arguments, arguments.Capacity);
+            link.GetWorkingDirectory(directory, directory.Capacity);
+            return new InstallerShortcutInfo { LoadedFile = loadedFile, RawPath = raw.ToString(), RawPathHResult = rawResult,
+                NormalPath = normal.ToString(), NormalPathHResult = normalResult, Arguments = arguments.ToString(), WorkingDirectory = directory.ToString() };
+        }
+        finally { Marshal.FinalReleaseComObject(instance); }
     }
 }
 '@

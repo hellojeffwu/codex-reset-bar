@@ -1,5 +1,5 @@
 using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace CodexResetBar;
 
@@ -62,22 +62,11 @@ internal sealed class GradientPanel : Panel
 
 internal static class AppIcon
 {
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DestroyIcon(IntPtr handle);
     public static Icon Create()
     {
-        using var bitmap = new Bitmap(32, 32);
-        using var g = Graphics.FromImage(bitmap);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Color.Transparent);
-        using var background = new SolidBrush(Theme.Background);
-        g.FillEllipse(background, 1, 1, 30, 30);
-        using var pen = new Pen(Theme.Accent, 3) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawArc(pen, 7, 7, 18, 18, 35, 290);
-        using var fill = new SolidBrush(Theme.Accent);
-        g.FillPolygon(fill, [new PointF(23, 5), new PointF(27, 12), new PointF(19, 11)]);
-        IntPtr handle = bitmap.GetHicon();
-        try { return (Icon)Icon.FromHandle(handle).Clone(); }
-        finally { DestroyIcon(handle); }
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CodexResetBar.app.ico")
+            ?? throw new InvalidOperationException("Application icon is missing.");
+        using var icon = new Icon(stream, 32, 32);
+        return (Icon)icon.Clone();
     }
 }

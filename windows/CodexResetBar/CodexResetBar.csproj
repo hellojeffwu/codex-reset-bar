@@ -15,7 +15,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>CodexResetBar</AssemblyName>
     <RootNamespace>CodexResetBar</RootNamespace>
-    <Version>1.5.0</Version>
+    <Version>1.6.0</Version>
     <Product>Codex 额度提醒</Product>
     <Description>Windows tray monitor for locally signed-in Codex quota.</Description>
     <Copyright>Personal use; commercial use requires authorization.</Copyright>
@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="../CodexResetBar.Core/CodexResetBar.Core.csproj" />
     <EmbeddedResource Include="../../assets/wechat-qr.png" LogicalName="CodexResetBar.wechat-qr.png" />
+    <EmbeddedResource Include="app.ico" LogicalName="CodexResetBar.app.ico" />
     <EmbeddedResource Include="../../LICENSE" LogicalName="CodexResetBar.licenses.APP.txt" />
     <EmbeddedResource Include="../notices/LICENSE.NET.txt" LogicalName="CodexResetBar.licenses.NET.txt" />
     <EmbeddedResource Include="../notices/LICENSE.WindowsForms.txt" LogicalName="CodexResetBar.licenses.WindowsForms.txt" />

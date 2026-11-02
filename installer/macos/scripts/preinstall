@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+# This product supports only the CurrentUserHomeDirectory installation domain.
+# Fail closed if invoked outside it; never guess the console user as root.
+if [ "$(/usr/bin/id -u)" -eq 0 ]; then
+  echo '请以当前用户打开完整的 Codex 额度提醒安装向导；不支持 root 或系统级安装。' >&2
+  exit 1
+fi
+
+exec "$(/usr/bin/dirname "$0")/StopRunningApp"

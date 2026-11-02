@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>Codex 额度提醒</title>
+  <options customize="never" require-scripts="false"/>
+  <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="false"/>
+  <welcome file="welcome.html" mime-type="text/html"/>
+  <license file="license.txt" mime-type="text/plain"/>
+  <conclusion file="conclusion.html" mime-type="text/html"/>
+  <volume-check script="true">
+    <allowed-os-versions><os-version min="@MINIMUM@"/></allowed-os-versions>
+  </volume-check>
+  <choices-outline><line choice="app"/></choices-outline>
+  <choice id="app" visible="false" title="Codex 额度提醒">
+    <pkg-ref id="local.benxin.codex-reset-bar.pkg"/>
+  </choice>
+  <pkg-ref id="local.benxin.codex-reset-bar.pkg" version="@VERSION@" onConclusion="None">CodexResetBar.pkg</pkg-ref>
+  <pkg-ref id="local.benxin.codex-reset-bar.pkg">
+    <must-close><app id="local.benxin.codex-reset-bar"/></must-close>
+  </pkg-ref>
+</installer-gui-script>

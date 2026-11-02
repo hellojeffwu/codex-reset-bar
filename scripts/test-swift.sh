@@ -22,6 +22,7 @@ run_suite ReminderRulesTests Sources/Quota.swift Sources/ReminderRules.swift
 run_suite TaskActivityTests Sources/TaskActivity.swift
 run_suite PhonePushTests Sources/PhonePush.swift
 run_suite RepeatingAlarmTests Sources/RepeatingAlarm.swift
+run_suite LoginConfigurationTests Sources/LoginConfiguration.swift
 
 settings_sources=(Sources/Quota.swift Sources/ReminderRules.swift Sources/PhonePush.swift
                   Sources/ReminderSettings.swift)
@@ -35,4 +36,4 @@ awk '/^@MainActor final class Monitor/ { found = 1; exit } { print } END { if (!
   Sources/App.swift > "$work_dir/SavedState.swift"
 run_suite NodeIntegrationTests Sources/Quota.swift Sources/ReminderRules.swift \
   Sources/PhonePush.swift "$work_dir/SavedState.swift"
-printf '\nAll 7 Swift test suites passed.\n'
+printf '\nAll 8 Swift test suites passed.\n'

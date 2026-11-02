@@ -90,6 +90,7 @@ struct SavedState: Codable {
     }
 
     func start() {
+        relocateExistingLoginItem()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -245,6 +246,17 @@ struct SavedState: Codable {
 
     static var loginURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/\(appID).plist")
+    }
+
+    private func relocateExistingLoginItem() {
+        guard let executable = Bundle.main.executablePath,
+              let data = try? Data(contentsOf: Self.loginURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let updated = LoginConfiguration.relocated(plist, label: appID, executable: executable) else { return }
+        do {
+            try PropertyListSerialization.data(fromPropertyList: updated, format: .xml, options: 0)
+                .write(to: Self.loginURL, options: .atomic)
+        } catch { self.error = "无法更新登录启动路径，请在设置中重新开启登录启动：\(error.localizedDescription)" }
     }
 
     func setLogin(_ enabled: Bool) {

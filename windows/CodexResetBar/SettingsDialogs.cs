@@ -209,7 +209,7 @@ internal sealed class AboutForm : Form
     public AboutForm()
     {
         Theme.DialogLayout(this, 390, 548); Text = "关于 / 联系与商业授权";
-        var title = Theme.Label("Codex 额度提醒  1.5.0", 13, bold: true); title.SetBounds(22, 14, 346, 34);
+        var title = Theme.Label("Codex 额度提醒  1.6.0", 13, bold: true); title.SetBounds(22, 14, 346, 34);
         var license = Theme.Label("仅限个人非商业使用。\n商业使用需取得开发者书面授权。", 9, Theme.Muted); license.SetBounds(22, 52, 346, 48);
         var account = Theme.Label("开发者微信：wubenxincom", 11, Theme.Accent, true); account.SetBounds(22, 111, 346, 30);
         var copy = Theme.Button("复制微信号", () => Clipboard.SetText("wubenxincom")); copy.Name = "CopyWechatButton"; copy.SetBounds(22, 153, 346, 34);

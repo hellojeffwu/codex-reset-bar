@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   macos:
-    name: macOS universal DMG
+    name: macOS universal installer
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -20,10 +20,14 @@ jobs:
           persist-credentials: false
       - name: Run Swift test suites
         run: bash scripts/test-swift.sh
-      - name: Build and verify DMG
+      - name: Build DMG and PKG wizard
         env:
           CODEX_SIGNING_MODE: adhoc
         run: bash scripts/package-macos.sh
+      - name: Verify packaged wizard, resources and payload
+        run: bash scripts/verify-macos-package.sh
+      - name: Test current-user installation on disposable runner
+        run: bash scripts/test-macos-installer.sh
       - name: Upload macOS download
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -31,10 +35,12 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.dmg.sha256
+            dist/*.pkg
+            dist/*.pkg.sha256
           if-no-files-found: error
 
   windows:
-    name: Windows x64 EXE
+    name: Windows x64 setup wizard
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -74,6 +80,22 @@ jobs:
           path: |
             build/windows-ui/*.png
             build/windows/self-test*.log
+          if-no-files-found: warn
+      - name: Build Windows installation wizard
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -InstallInnoSetup
+      - name: Test installer, upgrade, installed app and uninstall
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem 'dist/*-windows-x64-setup.exe')
+          if ($setups.Count -ne 1) { throw 'Expected exactly one Windows setup executable.' }
+          ./scripts/test-windows-installer.ps1 -SetupPath $setups[0].FullName -CaptureWizard
+      - name: Upload installer verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codex-reset-bar-windows-installer-test
+          path: build/windows-installer-test/**
           if-no-files-found: warn
       - name: Prepare Windows download and SHA256
         shell: pwsh

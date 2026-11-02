@@ -1,10 +1,10 @@
 # Windows 版 Codex 额度提醒
 
-Windows 10/11 x64 系统托盘应用，采用原生 WinForms，界面与 macOS 版保持深色、青绿色风格。发布版为自带 .NET 运行时的单文件 `CodexResetBar.exe`，无需另外安装 .NET，也不需要管理员权限。
+Windows 10/11 x64 系统托盘应用，采用原生 WinForms，界面与 macOS 版保持深色、青绿色风格。推荐使用带新图标的分步安装包，自带 .NET 运行时，无需另外安装 .NET，也不需要管理员权限。
 
 ## 使用
 
-1. 从项目 GitHub Releases 下载 Windows x64 EXE，放在固定目录后双击。
+1. 从项目 GitHub Releases 下载 `CodexResetBar-1.6.0-windows-x64-setup.exe`，双击后按“下一步 → 阅读许可 → 选择位置与快捷方式 → 安装 → 完成”。默认安装到 `%LOCALAPPDATA%\Programs\CodexResetBar`，可从开始菜单启动；桌面快捷方式可选。便携版 EXE / ZIP 仍可下载，放在固定目录后运行。
 2. 本机需已安装并登录 Codex CLI。应用自动查找 `codex.exe` / `codex.cmd`；找不到时，在“提醒设置”选择现有 CLI。程序不会代装 CLI。
 3. 点击系统托盘图标查看额度、剩余百分比、预计重置时间和错误状态。额度每 60 秒刷新，节点与任务事件每 15 秒检查。读取失败会保留最近成功读取的数据并明确提示。
 4. 关闭主窗口会隐藏到系统托盘。完全退出请使用“退出监测”。“登录时启动”只修改当前用户的 Windows 登录启动项。
@@ -27,10 +27,12 @@ Windows 10/11 x64 系统托盘应用，采用原生 WinForms，界面与 macOS �
 
 ```powershell
 dotnet run --project windows/CodexResetBar.Core.Tests -c Release
-dotnet publish windows/CodexResetBar/CodexResetBar.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist/windows-x64
+dotnet publish windows/CodexResetBar/CodexResetBar.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o build/windows
+./scripts/package-windows.ps1 -InstallInnoSetup
+./scripts/test-windows-installer.ps1 -SetupPath dist/CodexResetBar-1.6.0-windows-x64-setup.exe -CaptureWizard
 ```
 
-发布结果为 `dist/windows-x64/CodexResetBar.exe`。交叉构建成功只能验证编译与打包，不能替代 Windows 中的窗体、音频、托盘或实际 Codex 登录行为验证。
+安装向导需要 Inno Setup 6.5+；脚本可使用已有 ISCC，或通过 `-InstallInnoSetup` 安装固定版本的编译器。输出为 `dist/*-setup.exe` 和 SHA256。自检在独立临时安装目录执行安装、同版本升级、已安装 EXE 的离线自检和卸载，验证快捷方式、原始图标/二维码/许可、卸载注册和虚构数据保留；不会启动正常监测或发通知。交叉构建成功只能验证编译与打包，不能替代 Windows 中的窗体、音频、托盘或实际 Codex 登录行为验证。
 
 ## 离线自检与只读诊断
 
@@ -53,3 +55,5 @@ $p.ExitCode
 仅限个人非商业使用；商业使用需取得开发者书面授权。开发者微信：`wubenxincom`。应用“关于 / 联系与商业授权”中提供微信号复制按钮与原始二维码。
 
 单文件 EXE 内嵌应用许可、.NET Runtime 与 Windows Forms 许可、.NET 第三方声明，可在“关于 / 联系与商业授权”中的“查看许可与第三方声明”阅读。
+
+安装器使用 [Inno Setup](https://jrsoftware.org/)，其许可和简体中文翻译署名随安装包附带。卸载前请关闭“登录时启动”并退出应用，再从 Windows“设置 → 应用”或开始菜单卸载。本地状态和 DPAPI 配置会保留，重装后可继续使用。

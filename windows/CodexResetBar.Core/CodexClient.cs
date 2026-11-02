@@ -125,8 +125,17 @@ public sealed class CodexClient
             catch (Exception error) when (error is InvalidOperationException or IOException or ObjectDisposedException) { }
             try
             {
-                // Kill only the service started by this invocation and its own descendants.
-                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                // Closing stdin lets cmd wrappers wait for their native service to finish.
+                // Killing the wrapper immediately can leave the child's executable briefly locked.
+                if (!process.HasExited)
+                {
+                    try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1)); }
+                    catch (TimeoutException)
+                    {
+                        // Kill only this invocation and its own descendants if EOF was ignored.
+                        if (!process.HasExited) process.Kill(entireProcessTree: true);
+                    }
+                }
                 await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
             }
             catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException) { }

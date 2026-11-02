@@ -1,10 +1,13 @@
 using System.Net;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using CodexResetBar.Core;
 
 if (args.SequenceEqual(new[] { "app-server", "--stdio" }) && Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE") == "1")
 {
+    var pidFile = Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE_PID_FILE");
+    if (pidFile != null) await File.WriteAllTextAsync(pidFile, Environment.ProcessId.ToString());
     using var initialize = JsonDocument.Parse((await Console.In.ReadLineAsync())!);
     if (initialize.RootElement.GetProperty("method").GetString() != "initialize") return 2;
     // A token-like diagnostic must never enter the parent app's result/error.
@@ -29,6 +32,12 @@ if (args.SequenceEqual(new[] { "app-server", "--stdio" }) && Environment.GetEnvi
     Console.WriteLine(JsonSerializer.Serialize(new { id = 2, result = quota.RootElement }));
     // Remain alive until the client closes stdin; this also checks owned-child cleanup.
     await Console.In.ReadLineAsync();
+    if (mode == "graceful")
+    {
+        // An immediate tree kill loses this marker; allow a real service time to finish on EOF.
+        await Task.Delay(200);
+        await File.WriteAllTextAsync(Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE_SHUTDOWN_FILE")!, "closed");
+    }
     return 0;
 }
 
@@ -185,12 +194,33 @@ try
         File.Copy(executable, fixtureExe, true);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixtureExe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var prior = Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE");
+        var priorMode = Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE_MODE");
+        var priorPid = Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE_PID_FILE");
+        var priorShutdown = Environment.GetEnvironmentVariable("CBR_CORE_FIXTURE_SHUTDOWN_FILE");
+        var pidFile = Path.Combine(directory, "fixture.pid");
+        var shutdownFile = Path.Combine(directory, "fixture.shutdown");
+        async Task CheckFixtureExitedAsync(string label)
+        {
+            var pid = int.Parse(await File.ReadAllTextAsync(pidFile));
+            try
+            {
+                using var child = Process.GetProcessById(pid);
+                await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (ArgumentException) { } // Already reaped by the OS.
+            Check(true, label);
+        }
         try
         {
             Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE", "1");
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_MODE", "graceful");
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_PID_FILE", pidFile);
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_SHUTDOWN_FILE", shutdownFile);
             var client = new CodexClient();
             var fromProcess = await client.FetchAsync(fixtureExe);
             Check(fromProcess.Windows.Count == 2 && fromProcess.Windows[0].RemainingPercent == 27.5, "real child-process JSON-RPC handshake with fixture server");
+            Check(File.Exists(shutdownFile), "native service receives EOF and completes graceful shutdown");
+            await CheckFixtureExitedAsync("native service process exited after read");
             try
             {
                 Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_MODE", "login");
@@ -203,6 +233,7 @@ try
                 using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
                 try { await client.FetchAsync(fixtureExe, cancellation.Token); throw new Exception("cancellation ignored"); }
                 catch (OperationCanceledException) { Check(cancellation.IsCancellationRequested, "caller cancellation stops own child"); }
+                await CheckFixtureExitedAsync("unresponsive owned service exited after cancellation");
             }
             finally { Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_MODE", null); }
             if (OperatingSystem.IsWindows())
@@ -211,13 +242,24 @@ try
                 await File.WriteAllTextAsync(fixtureCmd, "@echo off\r\n\"%~dp0FixtureCodex.exe\" %*\r\n");
                 try
                 {
+                    File.Delete(shutdownFile);
+                    Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_MODE", "graceful");
                     var fromCmd = await client.FetchAsync(fixtureCmd);
                     Check(fromCmd.Windows.Count == 2, "Windows cmd wrapper JSON-RPC handshake");
+                    Check(File.Exists(shutdownFile), "Windows cmd child completes graceful EOF shutdown");
+                    await CheckFixtureExitedAsync("Windows cmd child exited before executable cleanup");
                 }
                 finally { File.Delete(fixtureCmd); }
             }
         }
-        finally { Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE", prior); File.Delete(fixtureExe); }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE", prior);
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_MODE", priorMode);
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_PID_FILE", priorPid);
+            Environment.SetEnvironmentVariable("CBR_CORE_FIXTURE_SHUTDOWN_FILE", priorShutdown);
+            File.Delete(fixtureExe);
+        }
     }
     else Console.WriteLine("SKIP child-process fixture (run apphost instead of dotnet dll)");
     var badCmd = Path.Combine(directory, "bad%path.cmd");

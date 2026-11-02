@@ -36,6 +36,8 @@ resources = expanded / "Resources"
 for element, filename in (("welcome", "welcome.html"), ("license", "license.txt"), ("conclusion", "conclusion.html")):
     assert distribution.find(element).get("file") == filename
     assert (resources / filename).is_file()
+    if filename.endswith(".html"):
+        assert "<img" not in (resources / filename).read_text(), "Installer's HTML importer must not show broken image attachments"
 assert (resources / "license.txt").read_bytes() == Path("LICENSE").read_bytes()
 assert (resources / "wechat-qr.png").read_bytes() == Path("assets/wechat-qr.png").read_bytes()
 assert "wubenxincom" in (resources / "conclusion.html").read_text()

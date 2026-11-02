@@ -19,12 +19,38 @@ function Get-RepoPath([string]$Path) {
     return [IO.Path]::GetFullPath((Join-Path $repoRoot $Path))
 }
 function Test-InnoVersion([string]$Path) {
-    $versionInfo = (Get-Item -LiteralPath $Path).VersionInfo
-    return ($versionInfo.ProductMajorPart -gt 6 -or ($versionInfo.ProductMajorPart -eq 6 -and $versionInfo.ProductMinorPart -ge 5))
+    # ISCC's PE ProductVersion can be 0.0.0.0. Ask the loaded compiler engine
+    # instead; /O- compiles this ASCII probe from stdin without creating an EXE.
+    $probe = @'
+[Setup]
+AppName=CodexResetBar compiler check
+AppVersion=1.0
+CreateAppDir=no
+Uninstallable=no
+Output=no
+'@
+    try {
+        $probeOutput = $probe | & $Path '/O-' '-' 2>&1 | Out-String
+        $probeExitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "Inno compiler candidate: $Path; engine probe failed."
+        return $false
+    }
+    $match = [regex]::Match($probeOutput, '(?im)^Compiler engine version:\s*[^\r\n]*?(\d+\.\d+\.\d+)')
+    if (-not $match.Success) {
+        Write-Host "Inno compiler candidate: $Path; engine version unavailable; probe exit=$probeExitCode"
+        return $false
+    }
+    $engineVersion = [version]$match.Groups[1].Value
+    Write-Host "Inno compiler candidate: $Path; engine=$engineVersion; probe exit=$probeExitCode"
+    return ($probeExitCode -eq 0 -and $engineVersion -ge [version]'6.5.0')
 }
 function Find-InnoCompiler {
     $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($command -and (Test-InnoVersion $command.Source)) { return $command.Source }
+    $managedCompiler = Join-Path $repoRoot 'build/tools/innosetup-6.5.4/ISCC.exe'
+    if ((Test-Path -LiteralPath $managedCompiler -PathType Leaf) -and (Test-InnoVersion $managedCompiler)) { return $managedCompiler }
     foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, (Join-Path $env:LOCALAPPDATA 'Programs'))) {
         if (-not $base) { continue }
         foreach ($edition in @('Inno Setup 6', 'Inno Setup 7')) {
@@ -57,11 +83,17 @@ if (-not $InnoSetupCompiler -and $InstallInnoSetup) {
         Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_5_4/innosetup-6.5.4.exe' -OutFile $dependencyInstaller -UseBasicParsing
         $dependencyHash = (Get-FileHash -LiteralPath $dependencyInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($dependencyHash -ne 'fa73bf47a4da250d185d07561c2bfda387e5e20db77e4570004cf6a133cc10b1') { throw 'Inno Setup dependency SHA256 mismatch.' }
-        $dependencyProcess = Start-Process -FilePath $dependencyInstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER' -Wait -PassThru
+        # The vendor supports portable=1: no global registration or associations.
+        # An explicit directory avoids previous-install and user-profile defaults.
+        $dependencyInstallDirectory = Join-Path $repoRoot 'build/tools/innosetup-6.5.4'
+        Write-Host "Installing verified Inno Setup 6.5.4 to: $dependencyInstallDirectory"
+        $dependencyArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', '/PORTABLE=1', '/NOICONS', '/TASKS=""', "/DIR=`"$dependencyInstallDirectory`"")
+        $dependencyProcess = Start-Process -FilePath $dependencyInstaller -ArgumentList $dependencyArguments -Wait -PassThru
         if ($dependencyProcess.ExitCode -ne 0) { throw "Inno Setup dependency installation failed: $($dependencyProcess.ExitCode)" }
+        $InnoSetupCompiler = Join-Path $dependencyInstallDirectory 'ISCC.exe'
+        if (-not (Test-Path -LiteralPath $InnoSetupCompiler -PathType Leaf)) { throw "Inno Setup exited successfully but did not create: $InnoSetupCompiler" }
     }
     finally { Remove-Item -LiteralPath $dependencyDirectory -Recurse -Force -ErrorAction SilentlyContinue }
-    $InnoSetupCompiler = Find-InnoCompiler
 }
 if (-not $InnoSetupCompiler) {
     throw 'Inno Setup 6.5+ is required. Use -InstallInnoSetup, or pass -InnoSetupCompiler to an existing ISCC.exe.'
